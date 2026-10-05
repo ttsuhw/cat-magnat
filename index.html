@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+    <title>Кото-Бизнес 7.3</title>
+    <style>
+        body { font-family: Arial; text-align: center; background: #f0f2f5; margin: 0; overflow: hidden; height: 100vh; user-select: none; touch-action: manipulation; transition: 0.3s; }
+        body.dark-mode { background: #121212; color: #fff; }
+        .main-container { display: flex; flex-wrap: wrap; justify-content: center; max-width: 900px; margin: 0 auto; padding: 5px; }
+        .game-block, .shop-block { flex: 1; min-width: 270px; padding: 5px; box-sizing: border-box; }
+        .shop-block { background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); margin: 5px; max-height: 60vh; overflow-y: auto; scrollbar-width: none; }
+        body.dark-mode .shop-block, body.dark-mode .settings-box, body.dark-mode .ad-banner { background: #1e1e1e; color: #fff; }
+        .settings-box { background: white; padding: 10px; border-radius: 12px; margin: 5px; display: inline-block; }
+        .btn-click { padding: 15px; font-size: 26px; font-weight: bold; background: #ffc107; border: none; border-radius: 50px; margin-top: 10px; width: 80%; max-width: 250px; cursor: pointer; }
+        .counter { font-size: 30px; margin: 10px 0; font-weight: bold; }
+        .ad-banner { background: #fff; border: 2px dashed #ff4757; padding: 8px; border-radius: 8px; color: #ff4757; font-weight: bold; font-size: 13px; margin: 10px auto; width: 85%; }
+        .shop-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; margin-bottom: 5px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee; cursor: pointer; font-size: 12px; }
+        body.dark-mode .shop-item { background: #2d2d2d; border-color: #444; }
+        .shop-item.disabled { opacity: 0.5; }
+        .falling-item { position: absolute; font-size: 50px; pointer-events: none; animation: fall 1.2s linear forwards; }
+        @keyframes fall { 0% { transform: translateY(-60px); opacity: 1; } 100% { transform: translateY(110vh); opacity: 0.1; } }
+        .ban-screen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #ff4757; color: white; z-index: 9999; justify-content: center; align-content: center; flex-direction: column; font-size: 24px; font-weight: bold; }
+        .ban-screen button { margin: 20px auto 0; padding: 10px 20px; border: none; border-radius: 8px; background: white; color: #ff4757; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="banScreen" class="ban-screen"><h2>🚨 ОБНАРУЖЕН АВТОКЛИКЕР! 🚨</h2><button id="unbanBtn">Я больше так не буду 🥺</button></div>
+    <div class="settings-box">
+        <label><input type="checkbox" id="themeToggle"> Тёмная тема</label>
+        <label>Режим: <select id="modeSelect"><option value="Котики">Котики 🐱</option><option value="Клики">Клики 🖱️</option></select></label>
+    </div>
+    <div class="main-container">
+        <div class="game-block">
+            <h1 id="titleText" style="font-size: 22px;">Пора ловить котиков!</h1>
+            <button class="btn-click" id="clickBtn">Котики</button>
+            <div class="counter"><span id="count">0</span></div>
+            <div style="font-size:14px;color:#666;" id="stBox">Клик: +1 | В сек: +0</div>
+            <div id="adBox" class="ad-banner">🔥 РЕКЛАМА: Скидки на кошачий корм! 🔥</div>
+        </div>
+        <div class="shop-block">
+            <h3 id="shopTitle" style="margin:0;border-bottom:2px solid #007bff;">Товары для Котиков</h3>
+            <div id="shopContainer"></div>
+        </div>
+    </div>
+    <script>
+        let data = JSON.parse(localStorage.getItem('catClickerData')) || { clicks: 0, clickPower: 1, passiveCPS: 0, upgrades: { pwr1: 0, pwr2: 0, cps1: 0, cps2: 0, cps3: 0 } };
+        let lastClickTime = 0;
+        const prices = { pwr1: 50, pwr2: 300, cps1: 100, cps2: 600, cps3: 2500 };
+        const ads = ["🔥 Скидки на супер-мыши 99%! 🔥", "🙀 Коты сломали сервер Ромы! 🙀", "🐟 Рыбные палочки — выбор чемпионов! 🐟", "📱 Phenom X4 одобряет этот кликер! 📱"];
+        const button = document.getElementById('clickBtn'), counterDisplay = document.getElementById('count'), stBox = document.getElementById('stBox'), themeToggle = document.getElementById('themeToggle'), modeSelect = document.getElementById('modeSelect'), titleText = document.getElementById('titleText'), banScreen = document.getElementById('banScreen'), unbanBtn = document.getElementById('unbanBtn'), adBox = document.getElementById('adBox'), shopContainer = document.getElementById('shopContainer'), shopTitle = document.getElementById('shopTitle');
+        const catAudio = new Audio('cute-kittens.mp3'), clickAudio = new Audio('mouse-click-sound.mp3');
+        // Подключаем реальный громкий звук сирены из интернета
+        const sirenAudio = new Audio('https://soundjay.com');
+        
+        catAudio.volume = 0.5; clickAudio.volume = 0.5; sirenAudio.volume = 0.7; sirenAudio.loop = true; // Сирена будет орать без остановки, пока не нажмешь кнопку разбана
+
+        function getPrice(id) { return Math.floor(prices[id] * Math.pow(1.3, data.upgrades[id])); }
+        function saveData() { localStorage.setItem('catClickerData', JSON.stringify(data)); }
+        function updateUI() { counterDisplay.textContent = Math.floor(data.clicks); stBox.textContent = `Клик: +${data.clickPower} | В сек: +${data.passiveCPS}`; renderShop(); }
+
+        function renderShop() {
+            const m = modeSelect.value;
+            const items = m === 'Котики' ? [
+                { id: 'pwr1', title: 'Лапка (+1 к клику)', cost: getPrice('pwr1'), type: 'pwr', value: 1 },
+                { id: 'pwr2', title: 'Мега-лапа (+5 к клику)', cost: getPrice('pwr2'), type: 'pwr', value: 5 },
+                { id: 'cps1', title: 'Миска корма (+1 в сек)', cost: getPrice('cps1'), type: 'cps', value: 1 },
+                { id: 'cps2', title: 'Валерьянка (+6 в сек)', cost: getPrice('cps2'), type: 'cps', value: 6 },
+                { id: 'cps3', title: 'Кото-ферма (+30 в сек)', cost: getPrice('cps3'), type: 'cps', value: 30 }
+            ] : [
+                { id: 'pwr1', title: 'Обычная мышка (+1 к клику)', cost: getPrice('pwr1'), type: 'pwr', value: 1 },
+                { id: 'pwr2', title: 'Игровой курсор (+5 к клику)', cost: getPrice('pwr2'), type: 'pwr', value: 5 },
+                { id: 'cps1', title: 'Коврик для мыши (+1 в сек)', cost: getPrice('cps1'), type: 'cps', value: 1 },
+                { id: 'cps2', title: 'Кабель USB 3.0 (+6 в сек)', cost: getPrice('cps2'), type: 'cps', value: 6 },
+                { id: 'cps3', title: 'Макросы / Скрипты (+30 в сек)', cost: getPrice('cps3'), type: 'cps', value: 30 }
+            ];
+            shopTitle.textContent = m === 'Котики' ? 'Товары для Котиков' : 'Железо для Кликов'; shopContainer.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div'); const canBuy = data.clicks >= item.cost; div.className = `shop-item ${canBuy ? '' : 'disabled'}`;
+                div.innerHTML = `<div><b>${item.title}</b><br><span style="color:#28a745">Цена: ${item.cost}</span></div><div style="font-size:14px;color:#007bff;font-weight:bold">${data.upgrades[item.id]}</div>`;
+                div.addEventListener('click', () => { if (data.clicks >= item.cost) { data.clicks -= item.cost; data.upgrades[item.id]++; if (item.type === 'pwr') data.clickPower += item.value; else data.passiveCPS += item.value; saveData(); updateUI(); } });
+                shopContainer.appendChild(div);
+            });
+        }
+
+        setInterval(() => { if (data.passiveCPS > 0) { data.clicks += data.passiveCPS; saveData(); updateUI(); } }, 1000);
+        setInterval(() => { adBox.textContent = ads[Math.floor(Math.random() * ads.length)]; }, 7000);
+
+        button.addEventListener('click', () => {
+            const curTime = Date.now(); 
+            // Если кликнул слишком быстро (меньше 65 миллисекунд), включается реальная сирена
+            if (lastClickTime !== 0 && (curTime - lastClickTime < 65)) { 
+                sirenAudio.play().catch(()=>{});
+                banScreen.style.display = 'flex'; 
+                return; 
+            }
+            lastClickTime = curTime; data.clicks += data.clickPower; saveData(); updateUI();
+            const mode = modeSelect.value;
+            if (mode === 'Котики') { catAudio.currentTime = 0; catAudio.play().catch(()=>{}); } else { clickAudio.currentTime = 0; clickAudio.play().catch(()=>{}); }
+            const item = document.createElement('div'); item.className = 'falling-item';
+            item.textContent = mode === 'Котики' ? ['🐱', '🐾', '🐈', '😻'][Math.floor(Math.random()*4)] : ['🖱️', '👆', '💻', '🎯'][Math.floor(Math.random()*4)];
+            item.style.left = (Math.random() * 85 + 5) + '%'; item.style.top = '0px';
+            document.body.appendChild(item); setTimeout(() => item.remove(), 1200);
+        });
+
+        unbanBtn.addEventListener('click', () => { 
+            banScreen.style.display = 'none'; 
+            sirenAudio.pause(); // Выключаем сирену при разбане
+            sirenAudio.currentTime = 0;
+            lastClickTime = 0; 
+        });
+        themeToggle.addEventListener('change', () => document.body.classList.toggle('dark-mode', themeToggle.checked));
+        modeSelect.addEventListener('change', () => { button.textContent = modeSelect.value; titleText.textContent = `Пора ловить ${modeSelect.value.toLowerCase()}!`; button.style.background = modeSelect.value === 'Клики' ? '#007bff' : '#ffc107'; button.style.color = modeSelect.value === 'Клики' ? '#fff' : '#212529'; renderShop(); });
+        updateUI();
+    </script>
+</body>
+</html>
+
